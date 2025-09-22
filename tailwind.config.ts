@@ -57,6 +57,22 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        editor: {
+          background: "hsl(var(--editor-background))",
+          foreground: "hsl(var(--editor-foreground))",
+          sidebar: "hsl(var(--editor-sidebar))",
+          "sidebar-border": "hsl(var(--editor-sidebar-border))",
+          tab: "hsl(var(--editor-tab))",
+          "tab-active": "hsl(var(--editor-tab-active))",
+          output: "hsl(var(--editor-output))",
+        },
+        syntax: {
+          keyword: "hsl(var(--syntax-keyword))",
+          string: "hsl(var(--syntax-string))",
+          comment: "hsl(var(--syntax-comment))",
+          function: "hsl(var(--syntax-function))",
+          variable: "hsl(var(--syntax-variable))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
