@@ -4,6 +4,7 @@ import { FileExplorer } from './FileExplorer';
 import { TabBar } from './TabBar';
 import { OutputPanel } from './OutputPanel';
 import { Toolbar } from './Toolbar';
+import { AICopilot } from './AICopilot';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -253,6 +254,54 @@ export const CodeEditor = () => {
     }
   };
 
+  const handleAIGeneration = async (structure: any) => {
+    try {
+      // Create folders first (not needed for current implementation but good for future)
+      
+      // Create files
+      const newFiles: CodeFile[] = [];
+      
+      for (const fileData of structure.files) {
+        const { data, error } = await supabase.functions.invoke('files', {
+          body: {
+            filename: fileData.path.replace(/^\//, ''), // Remove leading slash if present
+            content: fileData.content,
+            language: fileData.language
+          }
+        });
+        
+        if (error) {
+          console.error('Error creating file:', error);
+          continue;
+        }
+        
+        const newFile: CodeFile = {
+          id: data.id,
+          name: data.filename,
+          content: data.content,
+          language: data.language,
+          path: '/' + data.filename
+        };
+        
+        newFiles.push(newFile);
+      }
+      
+      // Update the files list
+      const updatedFiles = [...files, ...newFiles];
+      setFiles(updatedFiles);
+      
+      // Open the first new file if no file is currently active
+      if (!activeFile && newFiles.length > 0) {
+        const firstFile = newFiles[0];
+        setActiveFile(firstFile);
+        setOpenTabs([firstFile]);
+      }
+      
+    } catch (error) {
+      console.error('Error generating project:', error);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-editor-background text-editor-foreground">
       <Toolbar 
@@ -262,6 +311,11 @@ export const CodeEditor = () => {
         isRunning={isRunning}
         activeFile={activeFile}
         onSaveFile={() => activeFile && handleSaveFile(activeFile)}
+      />
+      
+      <AICopilot 
+        onFilesGenerated={handleAIGeneration}
+        existingFiles={files.map(f => ({ name: f.name, path: f.path, content: f.content }))}
       />
       
       <ResizablePanelGroup direction="horizontal" className="flex-1">
