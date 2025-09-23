@@ -5,6 +5,7 @@ import { TabBar } from './TabBar';
 import { OutputPanel } from './OutputPanel';
 import { Toolbar } from './Toolbar';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface CodeFile {
   id: string;
@@ -25,31 +26,44 @@ export interface ExecutionResult {
   };
 }
 
-const SAMPLE_FILES: CodeFile[] = [
-  {
-    id: '1',
-    name: 'main.py',
-    content: '# Welcome to Code Editor\nprint("Hello, World!")\n\n# Try running this code!',
-    language: 'python',
-    path: '/main.py'
-  },
-  {
-    id: '2',
-    name: 'example.js',
-    content: '// JavaScript Example\nconsole.log("Hello from JavaScript!");\n\nconst fibonacci = (n) => {\n  if (n <= 1) return n;\n  return fibonacci(n - 1) + fibonacci(n - 2);\n};\n\nconsole.log("Fibonacci(10):", fibonacci(10));',
-    language: 'javascript',
-    path: '/example.js'
-  }
-];
+const SAMPLE_FILES: CodeFile[] = [];
 
 export const CodeEditor = () => {
-  const [files, setFiles] = useState<CodeFile[]>(SAMPLE_FILES);
-  const [activeFile, setActiveFile] = useState<CodeFile | null>(SAMPLE_FILES[0]);
-  const [openTabs, setOpenTabs] = useState<CodeFile[]>([SAMPLE_FILES[0]]);
+  const [files, setFiles] = useState<CodeFile[]>([]);
+  const [activeFile, setActiveFile] = useState<CodeFile | null>(null);
+  const [openTabs, setOpenTabs] = useState<CodeFile[]>([]);
   const [output, setOutput] = useState<ExecutionResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('python');
   const editorRef = useRef<any>(null);
+
+  // Load files from Supabase on component mount
+  useEffect(() => {
+    loadFiles();
+  }, []);
+
+  const loadFiles = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('files');
+      if (error) throw error;
+      
+      const loadedFiles = data.map((file: any) => ({
+        id: file.id,
+        name: file.filename,
+        content: file.content,
+        language: file.language,
+        path: '/' + file.filename
+      }));
+      
+      setFiles(loadedFiles);
+      if (loadedFiles.length > 0 && !activeFile) {
+        setActiveFile(loadedFiles[0]);
+        setOpenTabs([loadedFiles[0]]);
+      }
+    } catch (error) {
+      console.error('Error loading files:', error);
+    }
+  };
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
@@ -109,10 +123,21 @@ export const CodeEditor = () => {
     }
   };
 
-  const handleSaveFile = (file: CodeFile) => {
-    // In a real app, this would save to backend
-    console.log('Saving file:', file.name);
-    // TODO: Save to Supabase when connected
+  const handleSaveFile = async (file: CodeFile) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('files', {
+        body: {
+          filename: file.name,
+          content: file.content,
+          language: file.language
+        }
+      });
+      
+      if (error) throw error;
+      console.log('File saved successfully:', file.name);
+    } catch (error) {
+      console.error('Error saving file:', error);
+    }
   };
 
   const handleRunCode = async () => {
@@ -122,31 +147,15 @@ export const CodeEditor = () => {
     setOutput(null);
     
     try {
-      // Mock execution for now - replace with Judge0 API when backend is ready
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { data, error } = await supabase.functions.invoke('execute-code', {
+        body: {
+          code: activeFile.content,
+          language: activeFile.language
+        }
+      });
       
-      if (activeFile.language === 'python' && activeFile.content.includes('print("Hello, World!")')) {
-        setOutput({
-          stdout: 'Hello, World!\n',
-          time: '0.021',
-          memory: 3328,
-          status: { description: 'Accepted' }
-        });
-      } else if (activeFile.language === 'javascript' && activeFile.content.includes('console.log')) {
-        setOutput({
-          stdout: 'Hello from JavaScript!\nFibonacci(10): 55\n',
-          time: '0.015',
-          memory: 2048,
-          status: { description: 'Accepted' }
-        });
-      } else {
-        setOutput({
-          stdout: 'Code executed successfully!\n',
-          time: '0.010',
-          memory: 1024,
-          status: { description: 'Accepted' }
-        });
-      }
+      if (error) throw error;
+      setOutput(data);
     } catch (error) {
       setOutput({
         stderr: 'Execution failed: ' + (error as Error).message,
@@ -157,30 +166,73 @@ export const CodeEditor = () => {
     }
   };
 
-  const handleFileCreate = (name: string, type: 'file' | 'folder') => {
+  const handleFileCreate = async (name: string, type: 'file' | 'folder') => {
     if (type === 'file') {
-      const newFile: CodeFile = {
-        id: Date.now().toString(),
-        name,
-        content: '',
-        language: getLanguageFromExtension(name),
-        path: '/' + name
-      };
-      setFiles([...files, newFile]);
+      try {
+        const { data, error } = await supabase.functions.invoke('files', {
+          body: {
+            filename: name,
+            content: '',
+            language: getLanguageFromExtension(name)
+          }
+        });
+        
+        if (error) throw error;
+        
+        const newFile: CodeFile = {
+          id: data.id,
+          name: data.filename,
+          content: data.content,
+          language: data.language,
+          path: '/' + data.filename
+        };
+        
+        setFiles([...files, newFile]);
+      } catch (error) {
+        console.error('Error creating file:', error);
+      }
     }
   };
 
-  const handleFileDelete = (fileId: string) => {
-    setFiles(files.filter(file => file.id !== fileId));
-    handleTabClose(fileId);
+  const handleFileDelete = async (fileId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke(`files/${fileId}`, {
+        body: {},
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (error) throw error;
+      
+      setFiles(files.filter(file => file.id !== fileId));
+      handleTabClose(fileId);
+    } catch (error) {
+      console.error('Error deleting file:', error);
+    }
   };
 
-  const handleFileRename = (fileId: string, newName: string) => {
-    setFiles(files.map(file => 
-      file.id === fileId 
-        ? { ...file, name: newName, language: getLanguageFromExtension(newName) }
-        : file
-    ));
+  const handleFileRename = async (fileId: string, newName: string) => {
+    try {
+      const file = files.find(f => f.id === fileId);
+      if (!file) return;
+      
+      const { data, error } = await supabase.functions.invoke(`files/${fileId}`, {
+        body: {
+          filename: newName,
+          content: file.content,
+          language: getLanguageFromExtension(newName)
+        }
+      });
+      
+      if (error) throw error;
+      
+      setFiles(files.map(f => 
+        f.id === fileId 
+          ? { ...f, name: newName, language: getLanguageFromExtension(newName) }
+          : f
+      ));
+    } catch (error) {
+      console.error('Error renaming file:', error);
+    }
   };
 
   const getLanguageFromExtension = (filename: string): string => {
