@@ -38,7 +38,24 @@ serve(async (req) => {
 
       case 'POST':
         // Create new file
-        const createData = await req.json();
+        let createData;
+        try {
+          const requestBody = await req.text();
+          console.log('Request body:', requestBody);
+          
+          if (!requestBody.trim()) {
+            throw new Error('Empty request body');
+          }
+          
+          createData = JSON.parse(requestBody);
+        } catch (parseError) {
+          console.error('JSON parsing error:', parseError);
+          return new Response(JSON.stringify({ error: `Invalid JSON: ${parseError.message}` }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
         console.log('Creating file:', createData);
 
         const { data: newFile, error: createError } = await supabase
@@ -59,7 +76,24 @@ serve(async (req) => {
 
       case 'PUT':
         // Update file
-        const updateData = await req.json();
+        let updateData;
+        try {
+          const requestBody = await req.text();
+          console.log('Update request body:', requestBody);
+          
+          if (!requestBody.trim()) {
+            throw new Error('Empty request body');
+          }
+          
+          updateData = JSON.parse(requestBody);
+        } catch (parseError) {
+          console.error('JSON parsing error:', parseError);
+          return new Response(JSON.stringify({ error: `Invalid JSON: ${parseError.message}` }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
         console.log('Updating file:', fileId, updateData);
 
         const { data: updatedFile, error: updateError } = await supabase

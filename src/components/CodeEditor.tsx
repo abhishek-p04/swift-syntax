@@ -128,30 +128,10 @@ export const CodeEditor = () => {
     try {
       let data, error;
       
-      if (file.id) {
-        // Update existing file using direct fetch to the PUT endpoint
-        const response = await fetch(`https://nfcayrabdjpclfqzoxpt.supabase.co/functions/v1/files/${file.id}`, {
+      if (file.id && file.id !== 'new') {
+        // Update existing file
+        const { data: result, error: updateError } = await supabase.functions.invoke(`files/${file.id}`, {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2F5cmFiZGpwY2xmcXpveHB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1MDkwMjIsImV4cCI6MjA3NDA4NTAyMn0.BNbclEfFlZo6b1iLd-DJkthxAISSgijMMl0aBCor-ac`,
-            'apikey': `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2F5cmFiZGpwY2xmcXpveHB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1MDkwMjIsImV4cCI6MjA3NDA4NTAyMn0.BNbclEfFlZo6b1iLd-DJkthxAISSgijMMl0aBCor-ac`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            filename: file.name,
-            content: file.content,
-            language: file.language
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        data = await response.json();
-      } else {
-        // Create new file
-        const result = await supabase.functions.invoke('files', {
           body: {
             filename: file.name,
             content: file.content,
@@ -159,8 +139,28 @@ export const CodeEditor = () => {
           }
         });
         
-        data = result.data;
-        error = result.error;
+        data = result;
+        error = updateError;
+      } else {
+        // Create new file
+        const { data: result, error: createError } = await supabase.functions.invoke('files', {
+          body: {
+            filename: file.name,
+            content: file.content,
+            language: file.language
+          }
+        });
+        
+        data = result;
+        error = createError;
+        
+        // Update file ID after creation
+        if (data && !error) {
+          const updatedFile = { ...file, id: data.id };
+          setActiveFile(updatedFile);
+          setFiles(files.map(f => f.id === file.id ? updatedFile : f));
+          setOpenTabs(openTabs.map(tab => tab.id === file.id ? updatedFile : tab));
+        }
       }
       
       if (error) throw error;
@@ -218,6 +218,8 @@ export const CodeEditor = () => {
         };
         
         setFiles([...files, newFile]);
+        setActiveFile(newFile);
+        setOpenTabs([...openTabs, newFile]);
       } catch (error) {
         console.error('Error creating file:', error);
       }
@@ -285,12 +287,14 @@ export const CodeEditor = () => {
 
   const handleAIGeneration = async (structure: any) => {
     try {
-      // Create folders first (not needed for current implementation but good for future)
+      console.log('Generating project structure:', structure);
       
       // Create files
       const newFiles: CodeFile[] = [];
       
       for (const fileData of structure.files) {
+        console.log('Creating file from AI:', fileData);
+        
         const { data, error } = await supabase.functions.invoke('files', {
           body: {
             filename: fileData.path.replace(/^\//, ''), // Remove leading slash if present
@@ -300,7 +304,7 @@ export const CodeEditor = () => {
         });
         
         if (error) {
-          console.error('Error creating file:', error);
+          console.error('Error creating AI file:', error);
           continue;
         }
         
@@ -325,6 +329,8 @@ export const CodeEditor = () => {
         setActiveFile(firstFile);
         setOpenTabs([firstFile]);
       }
+      
+      console.log(`Successfully created ${newFiles.length} files from AI generation`);
       
     } catch (error) {
       console.error('Error generating project:', error);

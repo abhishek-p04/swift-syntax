@@ -69,7 +69,7 @@ Examples of good responses:
 
 Always include proper error handling, logging, and beginner-friendly comments.${existingFilesContext}`;
 
-    const response = await fetch('https://aimlapi.com/v1/chat/completions', {
+    const response = await fetch('https://api.aimlapi.com/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${aimlApiKey}`,
