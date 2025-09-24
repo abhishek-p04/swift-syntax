@@ -23,13 +23,13 @@ serve(async (req) => {
   }
 
   try {
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) {
-      throw new Error('OpenAI API key not configured');
+    const aimlApiKey = Deno.env.get('COPILOT_API_KEY');
+    if (!aimlApiKey) {
+      throw new Error('AIMLAPI key not configured');
     }
 
     const { prompt, existingFiles }: ProjectRequest = await req.json();
-    console.log('AI Copilot request:', { prompt, existingFilesCount: existingFiles.length });
+    console.log('AI Copilot request with AIMLAPI:', { prompt, existingFilesCount: existingFiles.length });
 
     // Create context about existing files
     const existingFilesContext = existingFiles.length > 0
@@ -69,14 +69,14 @@ Examples of good responses:
 
 Always include proper error handling, logging, and beginner-friendly comments.${existingFilesContext}`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://aimlapi.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Authorization': `Bearer ${aimlApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-3.5-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt }
@@ -88,8 +88,8 @@ Always include proper error handling, logging, and beginner-friendly comments.${
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error('AIMLAPI error:', errorData);
+      throw new Error(`AIMLAPI error: ${response.status}`);
     }
 
     const data = await response.json();

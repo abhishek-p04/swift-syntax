@@ -126,13 +126,42 @@ export const CodeEditor = () => {
 
   const handleSaveFile = async (file: CodeFile) => {
     try {
-      const { data, error } = await supabase.functions.invoke('files', {
-        body: {
-          filename: file.name,
-          content: file.content,
-          language: file.language
+      let data, error;
+      
+      if (file.id) {
+        // Update existing file using direct fetch to the PUT endpoint
+        const response = await fetch(`https://nfcayrabdjpclfqzoxpt.supabase.co/functions/v1/files/${file.id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2F5cmFiZGpwY2xmcXpveHB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1MDkwMjIsImV4cCI6MjA3NDA4NTAyMn0.BNbclEfFlZo6b1iLd-DJkthxAISSgijMMl0aBCor-ac`,
+            'apikey': `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5mY2F5cmFiZGpwY2xmcXpveHB0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1MDkwMjIsImV4cCI6MjA3NDA4NTAyMn0.BNbclEfFlZo6b1iLd-DJkthxAISSgijMMl0aBCor-ac`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            content: file.content,
+            language: file.language
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      });
+        
+        data = await response.json();
+      } else {
+        // Create new file
+        const result = await supabase.functions.invoke('files', {
+          body: {
+            filename: file.name,
+            content: file.content,
+            language: file.language
+          }
+        });
+        
+        data = result.data;
+        error = result.error;
+      }
       
       if (error) throw error;
       console.log('File saved successfully:', file.name);
