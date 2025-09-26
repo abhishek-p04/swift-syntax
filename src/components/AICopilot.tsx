@@ -47,16 +47,19 @@ export const AICopilot = ({ onFilesGenerated, existingFiles }: AICopilotProps) =
 
       if (error) throw error;
 
-      if (data.hasConflicts) {
-        setPreviewData(data.structure);
+      const structure = data?.structure;
+      if (structure?.hasConflicts) {
+        setPreviewData(structure);
         setShowPreview(true);
-      } else {
-        onFilesGenerated(data.structure);
+      } else if (structure) {
+        onFilesGenerated(structure);
         setPrompt('');
         toast({
           title: "Project generated!",
-          description: `Created ${data.structure.files.length} files and ${data.structure.folders.length} folders.`,
+          description: `Created ${structure.files.length} files and ${structure.folders.length} folders.`,
         });
+      } else {
+        throw new Error('Invalid response from AI copilot');
       }
     } catch (error) {
       console.error('Error generating project:', error);

@@ -104,10 +104,11 @@ serve(async (req) => {
     throw new Error('Execution timeout');
 
   } catch (error) {
-    console.error('Error in execute-code function:', error);
+    const err = error as Error;
+    console.error('Error in execute-code function:', err);
     return new Response(JSON.stringify({ 
-      error: error.message,
-      stderr: `Execution failed: ${error.message}`,
+      error: err?.message || 'Execution failed',
+      stderr: `Execution failed: ${err?.message || 'Unknown error'}`,
       status: { description: 'Runtime Error' }
     }), {
       status: 500,

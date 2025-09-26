@@ -29,8 +29,9 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('Error creating ZIP:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    const err = error as Error;
+    console.error('Error creating ZIP:', err);
+    return new Response(JSON.stringify({ error: err?.message || 'ZIP creation failed' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

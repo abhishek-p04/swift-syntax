@@ -22,122 +22,87 @@ serve(async (req) => {
     const pathParts = url.pathname.split('/');
     const fileId = pathParts[pathParts.length - 1];
 
-    switch (req.method) {
-      case 'GET':
-        // List all files
-        const { data: files, error: fetchError } = await supabase
-          .from('files')
-          .select('*')
-          .order('created_at', { ascending: false });
+    // Unified handler: supabase.functions.invoke always uses POST, so we infer action
+    const path = url.pathname;
+    const pathSegments = path.split('/').filter(Boolean);
+    const maybeId = pathSegments[pathSegments.length - 1];
+    const isIdPath = maybeId && maybeId !== 'files';
 
-        if (fetchError) throw fetchError;
-
-        return new Response(JSON.stringify(files), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-
-      case 'POST':
-        // Create new file
-        let createData;
-        try {
-          const requestBody = await req.text();
-          console.log('Request body:', requestBody);
-          
-          if (!requestBody.trim()) {
-            throw new Error('Empty request body');
-          }
-          
-          createData = JSON.parse(requestBody);
-        } catch (parseError) {
-          console.error('JSON parsing error:', parseError);
-          return new Response(JSON.stringify({ error: `Invalid JSON: ${parseError.message}` }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-        
-        console.log('Creating file:', createData);
-
-        const { data: newFile, error: createError } = await supabase
-          .from('files')
-          .insert([{
-            filename: createData.filename,
-            content: createData.content || '',
-            language: createData.language || 'javascript'
-          }])
-          .select()
-          .single();
-
-        if (createError) throw createError;
-
-        return new Response(JSON.stringify(newFile), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-
-      case 'PUT':
-        // Update file
-        let updateData;
-        try {
-          const requestBody = await req.text();
-          console.log('Update request body:', requestBody);
-          
-          if (!requestBody.trim()) {
-            throw new Error('Empty request body');
-          }
-          
-          updateData = JSON.parse(requestBody);
-        } catch (parseError) {
-          console.error('JSON parsing error:', parseError);
-          return new Response(JSON.stringify({ error: `Invalid JSON: ${parseError.message}` }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-        
-        console.log('Updating file:', fileId, updateData);
-
-        const { data: updatedFile, error: updateError } = await supabase
-          .from('files')
-          .update({
-            filename: updateData.filename,
-            content: updateData.content,
-            language: updateData.language
-          })
-          .eq('id', fileId)
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-
-        return new Response(JSON.stringify(updatedFile), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-
-      case 'DELETE':
-        // Delete file
-        console.log('Deleting file:', fileId);
-
-        const { error: deleteError } = await supabase
-          .from('files')
-          .delete()
-          .eq('id', fileId);
-
-        if (deleteError) throw deleteError;
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-
-      default:
-        return new Response('Method not allowed', {
-          status: 405,
-          headers: corsHeaders
-        });
+    // Try to read JSON body, default to {}
+    let payload: any = {};
+    try {
+      const bodyText = await req.text();
+      console.log('Raw body:', bodyText);
+      payload = bodyText ? JSON.parse(bodyText) : {};
+    } catch (e) {
+      console.warn('Body parse failed, continuing with empty object');
+      payload = {};
     }
 
+    // Determine intended action
+    // List: POST with empty body to /files OR explicit method GET
+    const isList = (!isIdPath && (req.method === 'GET' || (req.method === 'POST' && Object.keys(payload).length === 0)));
+
+    // Create: POST to /files with filename present
+    const isCreate = (!isIdPath && req.method === 'POST' && typeof payload.filename === 'string');
+
+    // Update: POST/PUT to /files/:id with content/filename/language
+    const isUpdate = (isIdPath && (req.method === 'PUT' || req.method === 'POST') && (
+      'filename' in payload || 'content' in payload || 'language' in payload
+    ));
+
+    // Delete: DELETE or POST with empty body to /files/:id
+    const isDelete = (isIdPath && (req.method === 'DELETE' || (req.method === 'POST' && Object.keys(payload).length === 0)));
+
+    if (isList) {
+      const { data: files, error: fetchError } = await supabase
+        .from('files')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (fetchError) throw fetchError;
+      return new Response(JSON.stringify(files), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (isCreate) {
+      console.log('Creating file:', payload);
+      const { data: newFile, error: createError } = await supabase
+        .from('files')
+        .insert([{ filename: payload.filename, content: payload.content || '', language: payload.language || 'javascript' }])
+        .select()
+        .single();
+      if (createError) throw createError;
+      return new Response(JSON.stringify(newFile), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (isUpdate) {
+      console.log('Updating file:', maybeId, payload);
+      const { data: updatedFile, error: updateError } = await supabase
+        .from('files')
+        .update({ filename: payload.filename, content: payload.content, language: payload.language })
+        .eq('id', maybeId)
+        .select()
+        .single();
+      if (updateError) throw updateError;
+      return new Response(JSON.stringify(updatedFile), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (isDelete) {
+      console.log('Deleting file:', maybeId);
+      const { error: deleteError } = await supabase.from('files').delete().eq('id', maybeId);
+      if (deleteError) throw deleteError;
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Fallback for unsupported operations
+    return new Response(JSON.stringify({ error: 'Unsupported operation' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
   } catch (error) {
-    console.error('Error in files function:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    const err = error as Error;
+    console.error('Error in files function:', err);
+    return new Response(JSON.stringify({ error: err?.message || 'Unexpected error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

@@ -69,31 +69,68 @@ Examples of good responses:
 
 Always include proper error handling, logging, and beginner-friendly comments.${existingFilesContext}`;
 
-    const response = await fetch('https://api.aimlapi.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${aimlApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-      }),
-    });
+    let aiResponse: string | null = null;
+    try {
+      const response = await fetch('https://api.aimlapi.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${aimlApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 4000,
+        }),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('AIMLAPI error:', errorData);
-      throw new Error(`AIMLAPI error: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('AIMLAPI error:', errorData);
+        throw new Error(`AIMLAPI error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      aiResponse = data.choices?.[0]?.message?.content;
+    } catch (primaryErr) {
+      const openaiKey = Deno.env.get('OPENAI_API_KEY');
+      if (!openaiKey) throw primaryErr;
+      console.log('Falling back to OpenAI');
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 4000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('OpenAI error:', errorData);
+        throw new Error(`OpenAI error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      aiResponse = data.choices?.[0]?.message?.content;
     }
 
-    const data = await response.json();
-    const aiResponse = data.choices[0].message.content;
+    if (!aiResponse) {
+      throw new Error('Empty AI response');
+    }
 
     console.log('AI response received');
 
@@ -140,9 +177,10 @@ Always include proper error handling, logging, and beginner-friendly comments.${
     });
 
   } catch (error) {
-    console.error('Error in ai-copilot function:', error);
+    const err = error as Error;
+    console.error('Error in ai-copilot function:', err);
     return new Response(JSON.stringify({ 
-      error: error.message || 'An unexpected error occurred' 
+      error: err?.message || 'An unexpected error occurred' 
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
