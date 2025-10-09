@@ -69,74 +69,54 @@ Examples of good responses:
 
 Always include proper error handling, logging, and beginner-friendly comments.${existingFilesContext}`;
 
-    // Try AIMLAPI first with multiple models before any external fallback
+    // Use Lovable AI Gateway instead of external providers
     let aiResponse: string | null = null;
 
-    const tryAiml = async (model: string) => {
-      const resp = await fetch('https://api.aimlapi.com/chat/completions', {
+    try {
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      if (!LOVABLE_API_KEY) {
+        throw new Error('LOVABLE_API_KEY is not configured');
+      }
+
+      const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${aimlApiKey}`,
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model,
+          // Default to fast, reliable Gemini model
+          model: 'google/gemini-2.5-flash',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
           ],
-          temperature: 0.4,
+          temperature: 0.35,
           max_tokens: 4000,
         }),
       });
-      if (!resp.ok) throw new Error(`AIMLAPI ${model} error: ${resp.status}`);
-      const data = await resp.json();
-      return data.choices?.[0]?.message?.content as string | undefined;
-    };
 
-    try {
-      aiResponse = (await tryAiml('gpt-3.5-turbo')) || null;
-    } catch (e1) {
-      console.warn('Primary AIML model failed, trying fallback model:', (e1 as Error).message);
-      try {
-        aiResponse = (await tryAiml('gpt-4o-mini')) || null;
-      } catch (e2) {
-        console.warn('Secondary AIML model failed:', (e2 as Error).message);
-      }
-    }
-
-    if (!aiResponse) {
-      // Optional OpenAI fallback only if a valid key is present
-      const openaiKey = Deno.env.get('OPENAI_API_KEY');
-      if (openaiKey) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.4,
-            max_tokens: 4000,
-          }),
-        });
-        if (!response.ok) {
-          const errorData = await response.text();
-          console.error('OpenAI error:', errorData);
-          throw new Error(`OpenAI error: ${response.status}`);
+      if (!resp.ok) {
+        if (resp.status === 429) {
+          throw new Error('Rate limit exceeded. Please try again shortly.');
         }
-        const data = await response.json();
-        aiResponse = data.choices?.[0]?.message?.content;
+        if (resp.status === 402) {
+          throw new Error('Payment required. Please add Lovable AI credits.');
+        }
+        const t = await resp.text();
+        console.error('Lovable AI gateway error:', resp.status, t);
+        throw new Error(`AI gateway error: ${resp.status}`);
       }
+
+      const data = await resp.json();
+      aiResponse = data.choices?.[0]?.message?.content || null;
+    } catch (e) {
+      console.error('AI gateway call failed:', e);
+      throw e;
     }
 
     if (!aiResponse) {
-      throw new Error('AI provider failed. Please verify COPILOT_API_KEY (AIMLAPI) or OPENAI_API_KEY.');
+      throw new Error('Empty AI response from gateway');
     }
 
     console.log('AI response received');

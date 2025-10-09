@@ -53,7 +53,7 @@ export const CodeEditor = () => {
         name: file.filename,
         content: file.content,
         language: file.language,
-        path: '/' + file.filename
+        path: '/' + String(file.filename || '').replace(/^\/+/, '')
       }));
       
       setFiles(loadedFiles);
@@ -238,7 +238,7 @@ export const CodeEditor = () => {
         name: data.filename,
         content: data.content,
         language: data.language,
-        path: '/' + data.filename
+        path: '/' + String(data.filename || '').replace(/^\/+/, '')
       };
 
       setFiles([...files, newFile]);
@@ -316,50 +316,69 @@ export const CodeEditor = () => {
   const handleAIGeneration = async (structure: any) => {
     try {
       console.log('Generating project structure:', structure);
-      
+
+      // Normalize paths and create missing folders first using .keep
+      const existingPaths = new Set(files.map(f => f.path.replace(/^\/+/, '')));
+      const dirs = new Set<string>();
+      for (const f of structure.files as Array<{ path: string }>) {
+        const p = String(f.path || '').replace(/^\/+/, '');
+        const parts = p.split('/');
+        parts.pop();
+        let accum = '';
+        for (const part of parts) {
+          accum = accum ? `${accum}/${part}` : part;
+          dirs.add(accum);
+        }
+      }
+
+      for (const d of Array.from(dirs)) {
+        const keepPath = `${d}/.keep`;
+        if (!existingPaths.has(keepPath)) {
+          const { error } = await supabase.functions.invoke('files', {
+            body: { filename: keepPath, content: '', language: 'plaintext' }
+          });
+          if (error) console.warn('Folder placeholder create failed:', d, error);
+        }
+      }
+
       // Create files
       const newFiles: CodeFile[] = [];
-      
       for (const fileData of structure.files) {
-        console.log('Creating file from AI:', fileData);
-        
+        const reqName = String(fileData.path || '').replace(/^\/+/, '');
         const { data, error } = await supabase.functions.invoke('files', {
           body: {
-            filename: fileData.path.replace(/^\//, ''), // Remove leading slash if present
+            filename: reqName,
             content: fileData.content,
             language: fileData.language
           }
         });
-        
         if (error) {
           console.error('Error creating AI file:', error);
           continue;
         }
-        
         const newFile: CodeFile = {
           id: data.id,
           name: data.filename,
           content: data.content,
           language: data.language,
-          path: '/' + data.filename
+          path: '/' + String(data.filename || '').replace(/^\/+/, '')
         };
-        
         newFiles.push(newFile);
       }
-      
+
       // Update the files list
       const updatedFiles = [...files, ...newFiles];
       setFiles(updatedFiles);
-      
+
       // Open the first new file if no file is currently active
       if (!activeFile && newFiles.length > 0) {
         const firstFile = newFiles[0];
         setActiveFile(firstFile);
         setOpenTabs([firstFile]);
       }
-      
+
       console.log(`Successfully created ${newFiles.length} files from AI generation`);
-      
+
     } catch (error) {
       console.error('Error generating project:', error);
     }

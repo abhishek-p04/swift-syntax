@@ -134,7 +134,7 @@ export const FileExplorer = ({
       const isActive = activeFile?.id === node.file.id;
       return (
         <div
-          key={node.path}
+          key={node.file?.id || node.path}
           className={`flex items-center px-2 py-1 rounded cursor-pointer hover:bg-editor-tab ${isActive ? 'bg-editor-tab-active' : ''}`}
           onClick={() => onFileSelect(node.file!)}
           style={{ paddingLeft: 8 + depth * 12 }}
