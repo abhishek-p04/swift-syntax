@@ -69,67 +69,74 @@ Examples of good responses:
 
 Always include proper error handling, logging, and beginner-friendly comments.${existingFilesContext}`;
 
+    // Try AIMLAPI first with multiple models before any external fallback
     let aiResponse: string | null = null;
-    try {
-      const response = await fetch('https://api.aimlapi.com/chat/completions', {
+
+    const tryAiml = async (model: string) => {
+      const resp = await fetch('https://api.aimlapi.com/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${aimlApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
           ],
-          temperature: 0.7,
+          temperature: 0.4,
           max_tokens: 4000,
         }),
       });
+      if (!resp.ok) throw new Error(`AIMLAPI ${model} error: ${resp.status}`);
+      const data = await resp.json();
+      return data.choices?.[0]?.message?.content as string | undefined;
+    };
 
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error('AIMLAPI error:', errorData);
-        throw new Error(`AIMLAPI error: ${response.status}`);
+    try {
+      aiResponse = (await tryAiml('gpt-3.5-turbo')) || null;
+    } catch (e1) {
+      console.warn('Primary AIML model failed, trying fallback model:', (e1 as Error).message);
+      try {
+        aiResponse = (await tryAiml('gpt-4o-mini')) || null;
+      } catch (e2) {
+        console.warn('Secondary AIML model failed:', (e2 as Error).message);
       }
-
-      const data = await response.json();
-      aiResponse = data.choices?.[0]?.message?.content;
-    } catch (primaryErr) {
-      const openaiKey = Deno.env.get('OPENAI_API_KEY');
-      if (!openaiKey) throw primaryErr;
-      console.log('Falling back to OpenAI');
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 4000,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error('OpenAI error:', errorData);
-        throw new Error(`OpenAI error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      aiResponse = data.choices?.[0]?.message?.content;
     }
 
     if (!aiResponse) {
-      throw new Error('Empty AI response');
+      // Optional OpenAI fallback only if a valid key is present
+      const openaiKey = Deno.env.get('OPENAI_API_KEY');
+      if (openaiKey) {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.4,
+            max_tokens: 4000,
+          }),
+        });
+        if (!response.ok) {
+          const errorData = await response.text();
+          console.error('OpenAI error:', errorData);
+          throw new Error(`OpenAI error: ${response.status}`);
+        }
+        const data = await response.json();
+        aiResponse = data.choices?.[0]?.message?.content;
+      }
+    }
+
+    if (!aiResponse) {
+      throw new Error('AI provider failed. Please verify COPILOT_API_KEY (AIMLAPI) or OPENAI_API_KEY.');
     }
 
     console.log('AI response received');

@@ -196,19 +196,21 @@ export const CodeEditor = () => {
     }
   };
 
-  const handleFileCreate = async (name: string, type: 'file' | 'folder') => {
-    if (type === 'file') {
-      try {
+  const handleFileCreate = async (name: string, type: 'file' | 'folder', parentPath?: string) => {
+    try {
+      if (type === 'folder') {
+        // Represent folders in DB by creating a placeholder .keep file
+        const folderPath = (parentPath ? parentPath.replace(/^\//, '') + '/' : '') + name.replace(/^\//, '').replace(/\/$/, '');
+        const placeholder = `${folderPath}/.keep`;
         const { data, error } = await supabase.functions.invoke('files', {
           body: {
-            filename: name,
+            filename: placeholder,
             content: '',
-            language: getLanguageFromExtension(name)
+            language: 'plaintext'
           }
         });
-        
         if (error) throw error;
-        
+        // Add to local state but hide .keep in UI; FileExplorer will handle hiding
         const newFile: CodeFile = {
           id: data.id,
           name: data.filename,
@@ -216,13 +218,34 @@ export const CodeEditor = () => {
           language: data.language,
           path: '/' + data.filename
         };
-        
         setFiles([...files, newFile]);
-        setActiveFile(newFile);
-        setOpenTabs([...openTabs, newFile]);
-      } catch (error) {
-        console.error('Error creating file:', error);
+        return;
       }
+
+      // type === 'file'
+      const fullFilename = (parentPath ? parentPath.replace(/^\//, '') + '/' : '') + name.replace(/^\//, '');
+      const { data, error } = await supabase.functions.invoke('files', {
+        body: {
+          filename: fullFilename,
+          content: '',
+          language: getLanguageFromExtension(fullFilename)
+        }
+      });
+      if (error) throw error;
+
+      const newFile: CodeFile = {
+        id: data.id,
+        name: data.filename,
+        content: data.content,
+        language: data.language,
+        path: '/' + data.filename
+      };
+
+      setFiles([...files, newFile]);
+      setActiveFile(newFile);
+      setOpenTabs([...openTabs, newFile]);
+    } catch (error) {
+      console.error('Error creating item:', error);
     }
   };
 
@@ -246,10 +269,15 @@ export const CodeEditor = () => {
     try {
       const file = files.find(f => f.id === fileId);
       if (!file) return;
+
+      // Keep the file in the same directory; only change the last segment
+      const segments = file.path.replace(/^\//, '').split('/');
+      segments[segments.length - 1] = newName.replace(/^\//, '');
+      const newFilename = segments.join('/');
       
       const { data, error } = await supabase.functions.invoke(`files/${fileId}`, {
         body: {
-          filename: newName,
+          filename: newFilename,
           content: file.content,
           language: getLanguageFromExtension(newName)
         }
@@ -259,7 +287,7 @@ export const CodeEditor = () => {
       
       setFiles(files.map(f => 
         f.id === fileId 
-          ? { ...f, name: newName, language: getLanguageFromExtension(newName) }
+          ? { ...f, name: newFilename, language: getLanguageFromExtension(newName), path: '/' + newFilename }
           : f
       ));
     } catch (error) {
