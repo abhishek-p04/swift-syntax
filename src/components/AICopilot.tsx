@@ -34,15 +34,14 @@ export const AICopilot = ({ onFilesGenerated, existingFiles }: AICopilotProps) =
 
     setIsGenerating(true);
     try {
-      const normalizedMap = new Map<string, { path: string; content: string; name: string }>();
-      for (const f of existingFiles) {
-        const p = '/' + String(f.path || '').replace(/^\/+/, '');
-        normalizedMap.set(p, { path: p, content: f.content, name: f.name });
-      }
       const { data, error } = await supabase.functions.invoke('ai-copilot', {
         body: {
           prompt: prompt.trim(),
-          existingFiles: Array.from(normalizedMap.values())
+          existingFiles: existingFiles.map(f => ({
+            path: f.path,
+            content: f.content,
+            name: f.name
+          }))
         }
       });
 

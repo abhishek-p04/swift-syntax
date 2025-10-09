@@ -69,54 +69,67 @@ Examples of good responses:
 
 Always include proper error handling, logging, and beginner-friendly comments.${existingFilesContext}`;
 
-    // Use Lovable AI Gateway instead of external providers
     let aiResponse: string | null = null;
-
     try {
-      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-      if (!LOVABLE_API_KEY) {
-        throw new Error('LOVABLE_API_KEY is not configured');
-      }
-
-      const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      const response = await fetch('https://api.aimlapi.com/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Authorization': `Bearer ${aimlApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          // Default to fast, reliable Gemini model
-          model: 'google/gemini-2.5-flash',
+          model: 'gpt-4o-mini',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
           ],
-          temperature: 0.35,
+          temperature: 0.7,
           max_tokens: 4000,
         }),
       });
 
-      if (!resp.ok) {
-        if (resp.status === 429) {
-          throw new Error('Rate limit exceeded. Please try again shortly.');
-        }
-        if (resp.status === 402) {
-          throw new Error('Payment required. Please add Lovable AI credits.');
-        }
-        const t = await resp.text();
-        console.error('Lovable AI gateway error:', resp.status, t);
-        throw new Error(`AI gateway error: ${resp.status}`);
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('AIMLAPI error:', errorData);
+        throw new Error(`AIMLAPI error: ${response.status}`);
       }
 
-      const data = await resp.json();
-      aiResponse = data.choices?.[0]?.message?.content || null;
-    } catch (e) {
-      console.error('AI gateway call failed:', e);
-      throw e;
+      const data = await response.json();
+      aiResponse = data.choices?.[0]?.message?.content;
+    } catch (primaryErr) {
+      const openaiKey = Deno.env.get('OPENAI_API_KEY');
+      if (!openaiKey) throw primaryErr;
+      console.log('Falling back to OpenAI');
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 4000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('OpenAI error:', errorData);
+        throw new Error(`OpenAI error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      aiResponse = data.choices?.[0]?.message?.content;
     }
 
     if (!aiResponse) {
-      throw new Error('Empty AI response from gateway');
+      throw new Error('Empty AI response');
     }
 
     console.log('AI response received');

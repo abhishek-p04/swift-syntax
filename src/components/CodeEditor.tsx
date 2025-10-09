@@ -53,7 +53,7 @@ export const CodeEditor = () => {
         name: file.filename,
         content: file.content,
         language: file.language,
-        path: '/' + String(file.filename || '').replace(/^\/+/, '')
+        path: '/' + file.filename
       }));
       
       setFiles(loadedFiles);
@@ -196,21 +196,19 @@ export const CodeEditor = () => {
     }
   };
 
-  const handleFileCreate = async (name: string, type: 'file' | 'folder', parentPath?: string) => {
-    try {
-      if (type === 'folder') {
-        // Represent folders in DB by creating a placeholder .keep file
-        const folderPath = (parentPath ? parentPath.replace(/^\//, '') + '/' : '') + name.replace(/^\//, '').replace(/\/$/, '');
-        const placeholder = `${folderPath}/.keep`;
+  const handleFileCreate = async (name: string, type: 'file' | 'folder') => {
+    if (type === 'file') {
+      try {
         const { data, error } = await supabase.functions.invoke('files', {
           body: {
-            filename: placeholder,
+            filename: name,
             content: '',
-            language: 'plaintext'
+            language: getLanguageFromExtension(name)
           }
         });
+        
         if (error) throw error;
-        // Add to local state but hide .keep in UI; FileExplorer will handle hiding
+        
         const newFile: CodeFile = {
           id: data.id,
           name: data.filename,
@@ -218,34 +216,13 @@ export const CodeEditor = () => {
           language: data.language,
           path: '/' + data.filename
         };
+        
         setFiles([...files, newFile]);
-        return;
+        setActiveFile(newFile);
+        setOpenTabs([...openTabs, newFile]);
+      } catch (error) {
+        console.error('Error creating file:', error);
       }
-
-      // type === 'file'
-      const fullFilename = (parentPath ? parentPath.replace(/^\//, '') + '/' : '') + name.replace(/^\//, '');
-      const { data, error } = await supabase.functions.invoke('files', {
-        body: {
-          filename: fullFilename,
-          content: '',
-          language: getLanguageFromExtension(fullFilename)
-        }
-      });
-      if (error) throw error;
-
-      const newFile: CodeFile = {
-        id: data.id,
-        name: data.filename,
-        content: data.content,
-        language: data.language,
-        path: '/' + String(data.filename || '').replace(/^\/+/, '')
-      };
-
-      setFiles([...files, newFile]);
-      setActiveFile(newFile);
-      setOpenTabs([...openTabs, newFile]);
-    } catch (error) {
-      console.error('Error creating item:', error);
     }
   };
 
@@ -269,15 +246,10 @@ export const CodeEditor = () => {
     try {
       const file = files.find(f => f.id === fileId);
       if (!file) return;
-
-      // Keep the file in the same directory; only change the last segment
-      const segments = file.path.replace(/^\//, '').split('/');
-      segments[segments.length - 1] = newName.replace(/^\//, '');
-      const newFilename = segments.join('/');
       
       const { data, error } = await supabase.functions.invoke(`files/${fileId}`, {
         body: {
-          filename: newFilename,
+          filename: newName,
           content: file.content,
           language: getLanguageFromExtension(newName)
         }
@@ -287,7 +259,7 @@ export const CodeEditor = () => {
       
       setFiles(files.map(f => 
         f.id === fileId 
-          ? { ...f, name: newFilename, language: getLanguageFromExtension(newName), path: '/' + newFilename }
+          ? { ...f, name: newName, language: getLanguageFromExtension(newName) }
           : f
       ));
     } catch (error) {
@@ -316,69 +288,50 @@ export const CodeEditor = () => {
   const handleAIGeneration = async (structure: any) => {
     try {
       console.log('Generating project structure:', structure);
-
-      // Normalize paths and create missing folders first using .keep
-      const existingPaths = new Set(files.map(f => f.path.replace(/^\/+/, '')));
-      const dirs = new Set<string>();
-      for (const f of structure.files as Array<{ path: string }>) {
-        const p = String(f.path || '').replace(/^\/+/, '');
-        const parts = p.split('/');
-        parts.pop();
-        let accum = '';
-        for (const part of parts) {
-          accum = accum ? `${accum}/${part}` : part;
-          dirs.add(accum);
-        }
-      }
-
-      for (const d of Array.from(dirs)) {
-        const keepPath = `${d}/.keep`;
-        if (!existingPaths.has(keepPath)) {
-          const { error } = await supabase.functions.invoke('files', {
-            body: { filename: keepPath, content: '', language: 'plaintext' }
-          });
-          if (error) console.warn('Folder placeholder create failed:', d, error);
-        }
-      }
-
+      
       // Create files
       const newFiles: CodeFile[] = [];
+      
       for (const fileData of structure.files) {
-        const reqName = String(fileData.path || '').replace(/^\/+/, '');
+        console.log('Creating file from AI:', fileData);
+        
         const { data, error } = await supabase.functions.invoke('files', {
           body: {
-            filename: reqName,
+            filename: fileData.path.replace(/^\//, ''), // Remove leading slash if present
             content: fileData.content,
             language: fileData.language
           }
         });
+        
         if (error) {
           console.error('Error creating AI file:', error);
           continue;
         }
+        
         const newFile: CodeFile = {
           id: data.id,
           name: data.filename,
           content: data.content,
           language: data.language,
-          path: '/' + String(data.filename || '').replace(/^\/+/, '')
+          path: '/' + data.filename
         };
+        
         newFiles.push(newFile);
       }
-
+      
       // Update the files list
       const updatedFiles = [...files, ...newFiles];
       setFiles(updatedFiles);
-
+      
       // Open the first new file if no file is currently active
       if (!activeFile && newFiles.length > 0) {
         const firstFile = newFiles[0];
         setActiveFile(firstFile);
         setOpenTabs([firstFile]);
       }
-
+      
       console.log(`Successfully created ${newFiles.length} files from AI generation`);
-
+      
     } catch (error) {
       console.error('Error generating project:', error);
     }

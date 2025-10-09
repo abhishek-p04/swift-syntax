@@ -76,13 +76,9 @@ serve(async (req) => {
 
     if (isUpdate) {
       console.log('Updating file:', maybeId, payload);
-      const updateData: Record<string, any> = {};
-      if ('filename' in payload) updateData.filename = payload.filename;
-      if ('content' in payload) updateData.content = payload.content;
-      if ('language' in payload) updateData.language = payload.language;
       const { data: updatedFile, error: updateError } = await supabase
         .from('files')
-        .update(updateData)
+        .update({ filename: payload.filename, content: payload.content, language: payload.language })
         .eq('id', maybeId)
         .select()
         .single();
