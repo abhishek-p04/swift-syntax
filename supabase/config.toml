@@ -1,1 +1,13 @@
 project_id = "nfcayrabdjpclfqzoxpt"
+
+[functions.files]
+verify_jwt = false
+
+[functions.execute-code]
+verify_jwt = false
+
+[functions.download-project]
+verify_jwt = false
+
+[functions.ai-debugger]
+verify_jwt = false
