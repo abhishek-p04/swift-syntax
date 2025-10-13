@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 interface DebugRequest {
-  error: string;
   code: string;
   language: string;
   fileName: string;
@@ -24,37 +23,55 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    const { error, code, language, fileName }: DebugRequest = await req.json();
-    console.log('AI Debugger request:', { error, language, fileName });
+    const { code, language, fileName }: DebugRequest = await req.json();
+    console.log('AI Debugger request:', { language, fileName, codeLength: code.length });
 
-    const systemPrompt = `You are an expert code debugger. Analyze errors and provide fixed code.
+    const systemPrompt = `You are an expert code analyzer and debugger, similar to GitHub Copilot. Perform comprehensive code analysis.
 
 CRITICAL INSTRUCTIONS:
-1. Analyze the error message carefully
-2. Identify the root cause of the issue
-3. Provide the COMPLETE fixed code (not just snippets)
-4. Explain the issue briefly
+1. Scan the entire code for potential bugs, errors, and exceptions
+2. Analyze code quality and efficiency (time/space complexity)
+3. Identify security vulnerabilities and bad practices
+4. Suggest improvements and optimizations
+5. Provide the COMPLETE fixed/improved code
 
 RESPONSE FORMAT (JSON only):
 {
-  "issue": "Brief description of what was wrong",
-  "fix": "Detailed explanation of the fix",
-  "fixedCode": "The complete corrected code",
-  "preventionTips": "Tips to prevent this error in the future"
+  "issues": [
+    {
+      "severity": "high|medium|low",
+      "type": "bug|error|warning|optimization|security",
+      "line": number,
+      "description": "Brief description of the issue",
+      "impact": "What could go wrong"
+    }
+  ],
+  "improvements": [
+    {
+      "category": "performance|readability|best-practice|security",
+      "description": "What to improve and why"
+    }
+  ],
+  "fixedCode": "The complete improved code with all fixes applied",
+  "summary": "Overall assessment and key changes made",
+  "complexity": {
+    "time": "Current time complexity analysis",
+    "space": "Current space complexity analysis",
+    "improved": "How the fixes improve complexity"
+  }
 }
 
-Always provide production-ready, working code with proper error handling.`;
+Always provide production-ready, optimized code with proper error handling.`;
 
     const userPrompt = `File: ${fileName}
 Language: ${language}
-Error: ${error}
 
-Code:
+Code to analyze:
 \`\`\`${language}
 ${code}
 \`\`\`
 
-Please analyze this error and provide the fixed code.`;
+Please perform a comprehensive analysis and provide fixes and improvements.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -118,8 +135,8 @@ Please analyze this error and provide the fixed code.`;
     }
 
     // Validate the structure
-    if (!debugResult.fixedCode) {
-      throw new Error('Invalid debug result: missing fixedCode');
+    if (!debugResult.fixedCode || !debugResult.issues) {
+      throw new Error('Invalid debug result: missing required fields');
     }
 
     return new Response(JSON.stringify({ result: debugResult }), {

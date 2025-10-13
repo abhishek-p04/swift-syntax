@@ -1,16 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Bug, CheckCircle, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2, Sparkles, AlertTriangle, CheckCircle2, Lightbulb, Zap } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
-interface DebugResult {
-  issue: string;
-  fix: string;
+interface Issue {
+  severity: 'high' | 'medium' | 'low';
+  type: 'bug' | 'error' | 'warning' | 'optimization' | 'security';
+  line?: number;
+  description: string;
+  impact: string;
+}
+
+interface Improvement {
+  category: 'performance' | 'readability' | 'best-practice' | 'security';
+  description: string;
+}
+
+interface Complexity {
+  time: string;
+  space: string;
+  improved: string;
+}
+
+interface AnalysisResult {
+  issues: Issue[];
+  improvements: Improvement[];
   fixedCode: string;
-  preventionTips: string;
+  summary: string;
+  complexity: Complexity;
 }
 
 interface AIDebuggerProps {
@@ -18,41 +49,32 @@ interface AIDebuggerProps {
   language: string;
   fileName: string;
   onCodeFixed: (fixedCode: string) => void;
+  onAnalyze?: () => void;
 }
 
-export const AIDebugger = ({ code, language, fileName, onCodeFixed }: AIDebuggerProps) => {
+export const AIDebugger = ({ code, language, fileName, onCodeFixed, onAnalyze }: AIDebuggerProps) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [debugResult, setDebugResult] = useState<DebugResult | null>(null);
-  const [detectedErrors, setDetectedErrors] = useState<string[]>([]);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const { toast } = useToast();
 
-  // Monitor console errors
-  useEffect(() => {
-    const originalError = console.error;
-    console.error = (...args: any[]) => {
-      const errorMsg = args.join(' ');
-      setDetectedErrors(prev => {
-        if (!prev.includes(errorMsg)) {
-          return [...prev, errorMsg];
-        }
-        return prev;
+  const handleAnalyze = async () => {
+    if (!code.trim()) {
+      toast({
+        title: "No code to analyze",
+        description: "Please write some code first.",
+        variant: "destructive",
       });
-      originalError.apply(console, args);
-    };
+      return;
+    }
 
-    return () => {
-      console.error = originalError;
-    };
-  }, []);
-
-  const handleDebug = async (errorMessage: string) => {
     setIsAnalyzing(true);
-    setDebugResult(null);
+    setAnalysisResult(null);
+    onAnalyze?.();
 
     try {
       const { data, error } = await supabase.functions.invoke('ai-debugger', {
         body: {
-          error: errorMessage,
           code,
           language,
           fileName
@@ -63,10 +85,10 @@ export const AIDebugger = ({ code, language, fileName, onCodeFixed }: AIDebugger
 
       const result = data?.result;
       if (result) {
-        setDebugResult(result);
+        setAnalysisResult(result);
         toast({
-          title: "Issue detected!",
-          description: result.issue,
+          title: "Analysis complete!",
+          description: `Found ${result.issues.length} issues and ${result.improvements.length} improvement suggestions.`,
         });
       } else {
         throw new Error('Invalid response from AI debugger');
@@ -84,103 +106,194 @@ export const AIDebugger = ({ code, language, fileName, onCodeFixed }: AIDebugger
   };
 
   const handleApplyFix = () => {
-    if (debugResult?.fixedCode) {
-      onCodeFixed(debugResult.fixedCode);
+    setShowConfirmDialog(true);
+  };
+
+  const confirmApplyFix = () => {
+    if (analysisResult?.fixedCode) {
+      onCodeFixed(analysisResult.fixedCode);
       toast({
-        title: "Fix applied!",
-        description: "Code has been updated with the fix.",
+        title: "Changes applied!",
+        description: "Code has been updated with improvements.",
       });
-      setDebugResult(null);
-      setDetectedErrors([]);
+      setShowConfirmDialog(false);
+      setAnalysisResult(null);
     }
   };
 
-  const handleClearErrors = () => {
-    setDetectedErrors([]);
-    setDebugResult(null);
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'high': return 'destructive';
+      case 'medium': return 'default';
+      case 'low': return 'secondary';
+      default: return 'default';
+    }
+  };
+
+  const getSeverityIcon = (severity: string) => {
+    switch (severity) {
+      case 'high': return <AlertTriangle className="h-4 w-4" />;
+      case 'medium': return <AlertTriangle className="h-4 w-4" />;
+      case 'low': return <Lightbulb className="h-4 w-4" />;
+      default: return <Lightbulb className="h-4 w-4" />;
+    }
   };
 
   return (
-    <Card className="m-4 bg-card border-border">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Bug className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-foreground">AI Debugger</h3>
-        </div>
+    <>
+      <Card className="m-4 bg-card border-border shadow-lg">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">AI Code Analyzer</CardTitle>
+            </div>
+            <Button 
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              size="sm"
+              className="gap-2"
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4" />
+                  Analyze Code
+                </>
+              )}
+            </Button>
+          </div>
+        </CardHeader>
 
-        {detectedErrors.length > 0 && (
-          <Alert className="mb-3" variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Errors Detected ({detectedErrors.length})</AlertTitle>
-            <AlertDescription>
-              <div className="mt-2 space-y-2">
-                {detectedErrors.slice(-3).map((error, idx) => (
-                  <div key={idx} className="text-sm font-mono bg-background/50 p-2 rounded">
-                    {error.substring(0, 100)}...
+        <CardContent className="space-y-4">
+          {!analysisResult && !isAnalyzing && (
+            <div className="text-sm text-muted-foreground text-center py-4">
+              Click "Analyze Code" to scan for bugs, errors, and optimization opportunities.
+            </div>
+          )}
+
+          {analysisResult && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <Alert>
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertTitle>Analysis Summary</AlertTitle>
+                <AlertDescription>
+                  <p className="mt-2">{analysisResult.summary}</p>
+                </AlertDescription>
+              </Alert>
+
+              {/* Issues */}
+              {analysisResult.issues.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    Issues Found ({analysisResult.issues.length})
+                  </h4>
+                  <ScrollArea className="h-[200px] rounded-md border p-3">
+                    <div className="space-y-3">
+                      {analysisResult.issues.map((issue, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex items-start gap-2">
+                            <Badge variant={getSeverityColor(issue.severity)} className="gap-1">
+                              {getSeverityIcon(issue.severity)}
+                              {issue.severity}
+                            </Badge>
+                            <Badge variant="outline">{issue.type}</Badge>
+                            {issue.line && <Badge variant="secondary">Line {issue.line}</Badge>}
+                          </div>
+                          <p className="text-sm font-medium">{issue.description}</p>
+                          <p className="text-xs text-muted-foreground">{issue.impact}</p>
+                          {idx < analysisResult.issues.length - 1 && <Separator className="mt-3" />}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+
+              {/* Improvements */}
+              {analysisResult.improvements.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4 text-primary" />
+                    Improvement Suggestions ({analysisResult.improvements.length})
+                  </h4>
+                  <div className="bg-muted p-3 rounded-lg space-y-2">
+                    {analysisResult.improvements.map((improvement, idx) => (
+                      <div key={idx} className="flex items-start gap-2">
+                        <Badge variant="secondary">{improvement.category}</Badge>
+                        <p className="text-sm flex-1">{improvement.description}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="flex gap-2 mt-3">
-                <Button 
-                  size="sm"
-                  onClick={() => handleDebug(detectedErrors[detectedErrors.length - 1])}
-                  disabled={isAnalyzing}
-                >
-                  {isAnalyzing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    'Analyze & Fix'
-                  )}
+                </div>
+              )}
+
+              {/* Complexity Analysis */}
+              {analysisResult.complexity && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-primary" />
+                    Complexity Analysis
+                  </h4>
+                  <div className="bg-muted p-3 rounded-lg space-y-2 text-sm">
+                    <div><strong>Time Complexity:</strong> {analysisResult.complexity.time}</div>
+                    <div><strong>Space Complexity:</strong> {analysisResult.complexity.space}</div>
+                    <div className="text-primary"><strong>Improvements:</strong> {analysisResult.complexity.improved}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <div className="flex gap-2 pt-2">
+                <Button onClick={handleApplyFix} className="flex-1 gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Apply Changes
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={handleClearErrors}
-                >
-                  Clear
+                <Button variant="outline" onClick={() => setAnalysisResult(null)}>
+                  Dismiss
                 </Button>
               </div>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {debugResult && (
-          <div className="space-y-3">
-            <Alert>
-              <CheckCircle className="h-4 w-4" />
-              <AlertTitle>Issue Identified</AlertTitle>
-              <AlertDescription>
-                <p className="mt-2">{debugResult.issue}</p>
-              </AlertDescription>
-            </Alert>
-
-            <div className="bg-muted p-3 rounded-lg">
-              <h4 className="font-medium mb-2 text-sm">Fix Explanation</h4>
-              <p className="text-sm text-muted-foreground">{debugResult.fix}</p>
             </div>
+          )}
+        </CardContent>
+      </Card>
 
-            <div className="bg-muted p-3 rounded-lg">
-              <h4 className="font-medium mb-2 text-sm">Prevention Tips</h4>
-              <p className="text-sm text-muted-foreground">{debugResult.preventionTips}</p>
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply Code Changes?</DialogTitle>
+            <DialogDescription>
+              This will replace your current code with the improved version. This action cannot be undone.
+              Make sure to review the suggested changes before applying.
+            </DialogDescription>
+          </DialogHeader>
+          {analysisResult && (
+            <div className="py-4">
+              <p className="text-sm font-medium mb-2">Changes to be applied:</p>
+              <ul className="text-sm space-y-1 text-muted-foreground">
+                <li>• {analysisResult.issues.length} issues will be fixed</li>
+                <li>• {analysisResult.improvements.length} improvements will be applied</li>
+                <li>• Code quality and efficiency will be enhanced</li>
+              </ul>
             </div>
-
-            <div className="flex gap-2">
-              <Button onClick={handleApplyFix} className="bg-primary hover:bg-primary/90">
-                Apply Fix
-              </Button>
-              <Button variant="outline" onClick={() => setDebugResult(null)}>
-                Dismiss
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {!detectedErrors.length && !debugResult && (
-          <div className="text-sm text-muted-foreground">
-            No errors detected. The debugger monitors console errors and helps fix them automatically.
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmApplyFix}>
+              Confirm & Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
